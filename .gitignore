@@ -32,7 +32,7 @@ ENV/
 *.swo
 
 # Project specific
-data/
+# data/  # Temporarily commented out to push dataset
 checkpoints/
 *.csv
 *.pth
