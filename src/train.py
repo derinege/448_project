@@ -8,6 +8,7 @@ from tqdm import tqdm
 import os
 import argparse
 import csv
+from models.unet import UNet
 
 def dice_coef(preds, targets, threshold=0.5, eps=1e-6):
     preds = (preds > threshold).float()
@@ -74,13 +75,79 @@ def eval_one_epoch(model, loader, criterion, device):
 
 def get_model(model_name):
     if model_name == 'unet':
-        from models.unet import UNet
         return UNet(in_channels=3, out_channels=1)
     elif model_name == 'attention_unet':
         from models.attention_unet import AttentionUNet
         return AttentionUNet(in_channels=3, out_channels=1)
     else:
         raise ValueError(f"Unknown model: {model_name}")
+
+def train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs, device):
+    best_val_loss = float('inf')
+    
+    for epoch in range(num_epochs):
+        # Training phase
+        model.train()
+        train_loss = 0
+        train_dice = 0
+        
+        for batch_idx, (images, masks) in enumerate(tqdm(train_loader, desc=f'Epoch {epoch+1}/{num_epochs}')):
+            images = images.to(device)
+            masks = masks.to(device)
+            
+            # Forward pass
+            outputs = model(images)
+            loss = criterion(outputs, masks)
+            
+            # Backward pass and optimize
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            
+            # Calculate metrics
+            train_loss += loss.item()
+            train_dice += dice_coef(outputs, masks)
+        
+        # Calculate average training metrics
+        avg_train_loss = train_loss / len(train_loader)
+        avg_train_dice = train_dice / len(train_loader)
+        
+        # Validation phase
+        model.eval()
+        val_loss = 0
+        val_dice = 0
+        
+        with torch.no_grad():
+            for images, masks in val_loader:
+                images = images.to(device)
+                masks = masks.to(device)
+                
+                outputs = model(images)
+                loss = criterion(outputs, masks)
+                
+                val_loss += loss.item()
+                val_dice += dice_coef(outputs, masks)
+        
+        # Calculate average validation metrics
+        avg_val_loss = val_loss / len(val_loader)
+        avg_val_dice = val_dice / len(val_loader)
+        
+        # Print metrics
+        print(f'Epoch {epoch+1}/{num_epochs}:')
+        print(f'Train Loss: {avg_train_loss:.4f}, Train Dice: {avg_train_dice:.4f}')
+        print(f'Val Loss: {avg_val_loss:.4f}, Val Dice: {avg_val_dice:.4f}')
+        
+        # Save best model
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            torch.save(model.state_dict(), 'best_model.pth')
+            print('Best model saved!')
+
+def dice_coefficient(pred, target):
+    smooth = 1e-5
+    pred = (pred > 0.5).float()
+    intersection = (pred * target).sum()
+    return (2. * intersection + smooth) / (pred.sum() + target.sum() + smooth)
 
 def main():
     parser = argparse.ArgumentParser()

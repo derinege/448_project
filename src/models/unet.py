@@ -17,37 +17,65 @@ class DoubleConv(nn.Module):
         return self.double_conv(x)
 
 class UNet(nn.Module):
-    def __init__(self, in_channels=3, out_channels=1, features=[64, 128, 256, 512]):
+    def __init__(self, in_channels=3, out_channels=1):
         super().__init__()
-        self.downs = nn.ModuleList()
-        self.ups = nn.ModuleList()
-        # Down part
-        for feature in features:
-            self.downs.append(DoubleConv(in_channels, feature))
-            in_channels = feature
-        # Up part
-        for feature in reversed(features):
-            self.ups.append(
-                nn.ConvTranspose2d(feature*2, feature, kernel_size=2, stride=2)
-            )
-            self.ups.append(DoubleConv(feature*2, feature))
-        self.bottleneck = DoubleConv(features[-1], features[-1]*2)
-        self.final_conv = nn.Conv2d(features[0], out_channels, kernel_size=1)
+        
+        # Encoder
+        self.enc1 = DoubleConv(in_channels, 64)
+        self.enc2 = DoubleConv(64, 128)
+        self.enc3 = DoubleConv(128, 256)
+        self.enc4 = DoubleConv(256, 512)
+        
+        # Bottleneck
+        self.bottleneck = DoubleConv(512, 1024)
+        
+        # Decoder
+        self.up_conv4 = nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2)
+        self.dec4 = DoubleConv(1024, 512)
+        
+        self.up_conv3 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
+        self.dec3 = DoubleConv(512, 256)
+        
+        self.up_conv2 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
+        self.dec2 = DoubleConv(256, 128)
+        
+        self.up_conv1 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
+        self.dec1 = DoubleConv(128, 64)
+        
+        # Final convolution
+        self.final_conv = nn.Conv2d(64, out_channels, kernel_size=1)
+        
+        # Max pooling
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
     def forward(self, x):
-        skip_connections = []
-        for down in self.downs:
-            x = down(x)
-            skip_connections.append(x)
-            x = self.pool(x)
-        x = self.bottleneck(x)
-        skip_connections = skip_connections[::-1]
-        for idx in range(0, len(self.ups), 2):
-            x = self.ups[idx](x)
-            skip_connection = skip_connections[idx//2]
-            if x.shape != skip_connection.shape:
-                x = torch.nn.functional.interpolate(x, size=skip_connection.shape[2:])
-            x = torch.cat((skip_connection, x), dim=1)
-            x = self.ups[idx+1](x)
-        return self.final_conv(x) 
+        # Encoder
+        enc1 = self.enc1(x)
+        enc2 = self.enc2(self.pool(enc1))
+        enc3 = self.enc3(self.pool(enc2))
+        enc4 = self.enc4(self.pool(enc3))
+        
+        # Bottleneck
+        bottleneck = self.bottleneck(self.pool(enc4))
+        
+        # Decoder
+        dec4 = self.up_conv4(bottleneck)
+        dec4 = torch.cat((dec4, enc4), dim=1)
+        dec4 = self.dec4(dec4)
+        
+        dec3 = self.up_conv3(dec4)
+        dec3 = torch.cat((dec3, enc3), dim=1)
+        dec3 = self.dec3(dec3)
+        
+        dec2 = self.up_conv2(dec3)
+        dec2 = torch.cat((dec2, enc2), dim=1)
+        dec2 = self.dec2(dec2)
+        
+        dec1 = self.up_conv1(dec2)
+        dec1 = torch.cat((dec1, enc1), dim=1)
+        dec1 = self.dec1(dec1)
+        
+        # Final convolution
+        out = self.final_conv(dec1)
+        
+        return torch.sigmoid(out) 
