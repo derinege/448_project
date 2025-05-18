@@ -29,7 +29,7 @@ class PolypDataset(Dataset):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         
         mask = cv2.imread(str(self.masks_dir / img_name), cv2.IMREAD_GRAYSCALE)
-        mask = (mask > 127).astype(np.uint8)  # Convert to binary mask
+        mask = (mask > 127).astype(np.float32)  # Convert to binary mask and float32
         
         # Apply transformations
         if self.transform:

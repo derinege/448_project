@@ -78,4 +78,4 @@ class UNet(nn.Module):
         # Final convolution
         out = self.final_conv(dec1)
         
-        return torch.sigmoid(out) 
+        return out  # Sigmoid yok!
